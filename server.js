@@ -25,28 +25,50 @@ async function loginToRemOnline(email, password) {
     console.log("✅ Браузер запущено");
 
     const page = await browser.newPage();
+
+    // Збільшено timeout для повільних з'єднань
+    page.setDefaultNavigationTimeout(60000); // 60 секунд
+    page.setDefaultTimeout(60000);
+
     await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
 
     console.log("📱 Перехід на сторінку логіну...");
+
+    // ЗМІНЕНО: Використовуємо 'domcontentloaded' замість 'networkidle0' - швидше
     await page.goto("https://web.roapp.io/login", {
-      waitUntil: "networkidle0",
-      timeout: 30000,
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
     });
 
-    console.log("✍️ Введення даних...");
-    await page.type('input[name="email"]', email, { delay: 100 });
-    await page.type('input[name="password"]', password, { delay: 100 });
+    console.log("⏳ Чекаємо форму логіну...");
+    await page.waitForSelector('input[name="email"]', { timeout: 10000 });
 
-    console.log("🔐 Вхід в систему...");
-    await Promise.all([
-      page.click('button[type="submit"]'),
-      page.waitForNavigation({ waitUntil: "networkidle0", timeout: 30000 }),
-    ]);
+    console.log("✍️ Введення даних...");
+    await page.type('input[name="email"]', email, { delay: 50 });
+    await page.type('input[name="password"]', password, { delay: 50 });
+
+    console.log("🔐 Натискаємо кнопку входу...");
+    await page.click('button[type="submit"]');
+
+    console.log("⏳ Чекаємо завершення логіну...");
+    // ЗМІНЕНО: Чекаємо навігацію з більшим timeout
+    await page.waitForNavigation({
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+
+    // Додаткова пауза після логіну
+    await page.waitForTimeout(2000);
 
     console.log("🍪 Отримання cookies...");
     const cookies = await page.cookies();
+
+    if (cookies.length === 0) {
+      throw new Error("Не вдалося отримати cookies - можливо, невдалий логін");
+    }
+
     const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
 
     console.log(`✅ Успішно отримано ${cookies.length} cookies`);
@@ -55,7 +77,13 @@ async function loginToRemOnline(email, password) {
     return cookieString;
   } catch (error) {
     console.error("❌ Помилка:", error.message);
-    if (browser) await browser.close();
+    if (browser) {
+      try {
+        await browser.close();
+      } catch (e) {
+        console.error("Помилка закриття браузера:", e.message);
+      }
+    }
     throw error;
   }
 }
@@ -64,10 +92,17 @@ async function loginToRemOnline(email, password) {
 app.get("/", (req, res) => {
   res.json({
     status: "RemOnline Login Service",
-    version: "2.0.0",
+    version: "2.1.0",
     engine: "puppeteer-core + chromium",
     hasCachedCookies: !!cachedCookies,
     lastLogin: lastLoginTime ? new Date(lastLoginTime).toISOString() : null,
+    cacheExpiresIn:
+      cachedCookies && lastLoginTime
+        ? Math.max(
+            0,
+            Math.round((CACHE_DURATION - (Date.now() - lastLoginTime)) / 1000)
+          )
+        : 0,
   });
 });
 
@@ -129,4 +164,6 @@ app.get("/health", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Login service запущено на порту ${PORT}`);
+  console.log(`🔧 Timeout: 60 секунд`);
+  console.log(`💾 Cache duration: ${CACHE_DURATION / 1000 / 60} хвилин`);
 });
