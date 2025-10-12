@@ -1,5 +1,6 @@
 const express = require("express");
-const puppeteer = require("puppeteer");
+const puppeteer = require("puppeteer-core");
+const chromium = require("@sparticuz/chromium");
 
 const app = express();
 app.use(express.json());
@@ -9,23 +10,18 @@ let cachedCookies = null;
 let lastLoginTime = null;
 const CACHE_DURATION = 10 * 60 * 1000; // 10 хвилин
 
-// Конфігурація Puppeteer для Render
-const puppeteerConfig = {
-  headless: "new",
-  args: [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-  ],
-};
-
 async function loginToRemOnline(email, password) {
   console.log("🚀 Запуск браузера...");
 
   let browser;
   try {
-    browser = await puppeteer.launch(puppeteerConfig);
+    browser = await puppeteer.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+    });
+
     console.log("✅ Браузер запущено");
 
     const page = await browser.newPage();
@@ -68,7 +64,8 @@ async function loginToRemOnline(email, password) {
 app.get("/", (req, res) => {
   res.json({
     status: "RemOnline Login Service",
-    version: "1.0.0",
+    version: "2.0.0",
+    engine: "puppeteer-core + chromium",
     hasCachedCookies: !!cachedCookies,
     lastLogin: lastLoginTime ? new Date(lastLoginTime).toISOString() : null,
   });
